@@ -28,9 +28,6 @@ seal the result to the phone's inbox key → deposit it in the user's vault
   goes back to the recognition server instead.
 - It handles one job at a time.
 
-The [architecture overview](https://website.pocketnutrition.org/docs/architecture/overview) shows how the
-pieces fit together.
-
 ## Why it is safe to run at home
 
 The Mac sits on your home or office network, so the worker accepts no incoming connection and treats
@@ -101,8 +98,7 @@ start LM Studio for you: if the model server is down, jobs fail at extraction.
 To try it in the foreground first, run `.venv/bin/python -m worker.main`. When the apps send a recording or a
 photo, the log shows `processing ticket ...`.
 
-The self-hosting guide covers the server side:
-[Voice and photo](https://website.pocketnutrition.org/docs/self-hosting/run-the-platform#voice-and-photo).
+The server side is [`recognition`](https://github.com/pocket-nutrition/recognition).
 
 ## Configuration
 
