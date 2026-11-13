@@ -1,0 +1,65 @@
+name: CI
+
+# Contributions: every pull request runs the checks below. Workflows from forks wait for a maintainer to
+# approve them, and they get a read-only token and no secrets.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # The worker only runs on macOS, but the code imports on any OS and the tests mock every call to Handy,
+  # LM Studio, the recognition server and the vault, so a Linux runner is enough.
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      # Two tests call the real ffmpeg and ffprobe. They skip silently when ffmpeg is missing, which is why
+      # pytest runs with -rs below: the skip reasons are printed in the log.
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -v -rs
+
+  # The one check branch protection requires. It fails when any job above failed or was cancelled.
+  # Add every new job to `needs`.
+  ci-success:
+    name: ci-success
+    if: always()
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if a required job did not succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "job results: ${RESULTS}"
+          case " ${RESULTS} " in
+            *" failure "*|*" cancelled "*) exit 1 ;;
+          esac

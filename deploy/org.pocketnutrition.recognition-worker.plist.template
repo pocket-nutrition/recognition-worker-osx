@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>org.pocketnutrition.recognition-worker</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__WORKER_DIR__/.venv/bin/python</string>
+        <string>-m</string>
+        <string>worker.main</string>
+    </array>
+
+    <!-- The worker reads WORKER_KEY and the rest from .env in this directory: no secret lives in this file. -->
+    <key>WorkingDirectory</key>
+    <string>__WORKER_DIR__</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- Restart after a crash, but not in a tight loop if it keeps failing at startup. -->
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <!-- Handy and ffmpeg are looked up by absolute path or PATH: launchd's default PATH has no Homebrew. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__LOG_DIR__/recognition-worker.log</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG_DIR__/recognition-worker.log</string>
+</dict>
+</plist>
