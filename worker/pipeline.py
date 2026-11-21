@@ -19,6 +19,9 @@ from worker.vision import describe, normalize
 log = logging.getLogger(__name__)
 
 
+VAULT_DELIVERY_FAILED = "vault delivery failed"
+
+
 class NoSpeech(Exception):
     pass
 
@@ -109,13 +112,11 @@ async def process(job: Job, client: ServerClient, settings: Settings, steps: Ste
     try:
         async with heartbeat(client, job.lease_id, stage, settings.heartbeat_s):
             result = await _run_steps(job, client, steps, stage)
-            if job.drop is None:
-                await client.complete(job.lease_id, "none", result)
-            elif await deposit(_payload(job, "done", result, None)):
-                await client.complete(job.lease_id, "delivered")
+            if await deposit(_payload(job, "done", result, None)):
+                await client.complete(job.lease_id)
             else:
-                # Fallback: the phone can still fetch the result from the ticket.
-                await client.complete(job.lease_id, "failed", result)
+                # The result goes to the vault or nowhere: the server never keeps one (website#78).
+                await client.fail(job.lease_id, VAULT_DELIVERY_FAILED)
     except LeaseLost:
         log.warning("lost the lease on %s", job.ticket_id)
     except Exception as exc:
@@ -123,8 +124,7 @@ async def process(job: Job, client: ServerClient, settings: Settings, steps: Ste
         log.exception("job %s failed", job.ticket_id)
         reason = str(exc) if isinstance(exc, NoSpeech) else type(exc).__name__
         try:
-            if job.drop is not None:
-                await deposit(_payload(job, "failed", None, reason))
+            await deposit(_payload(job, "failed", None, reason))
             await client.fail(job.lease_id, reason)
         except LeaseLost:
             pass

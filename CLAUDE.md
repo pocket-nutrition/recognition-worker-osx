@@ -37,7 +37,7 @@ tests/         # pytest: test_pipeline, test_steps, test_vault, test_vision
 ## Invariants
 
 - Own credential `WORKER_KEY`, never the phone key. Outbound calls only.
-- Results are sealed into the vault by this worker; on `delivered` nothing is sent to the server. Only when the deposit fails (or no vault was requested) is the result sent to the server as fallback.
+- Results are sealed into the vault by this worker and go nowhere else. Every job carries a drop target; `complete` only says `delivered`. A deposit that fails ends the job with `fail("vault delivery failed")`: there is no fallback through the server, which has no route that accepts a result.
 - The drop target (`vault_url`) comes from a phone, so it is untrusted and this machine typically sits on a private (home or office) network: https + public addresses only, no redirects (`worker/vault.py`). Never loosen outside tests.
 - The audio is untrusted input: ffmpeg runs with `-protocol_whitelist file`, a duration cap, and a private temp dir that is deleted afterwards. Audio is never kept.
 - The photo is untrusted input too: it is re-encoded by ffmpeg (same sandboxing as audio) before the model server ever sees it, and the model is told to ignore text written in the image.

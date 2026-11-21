@@ -3,7 +3,7 @@
 import httpx
 
 from worker.config import Settings
-from worker.schemas import CaptureResult, Job
+from worker.schemas import Job
 
 
 class LeaseLost(Exception):
@@ -44,9 +44,9 @@ class ServerClient:
     async def progress(self, lease_id: str, status: str) -> None:
         self._check(await self._http.post(f"/worker/leases/{lease_id}/progress", json={"status": status}))
 
-    async def complete(self, lease_id: str, delivery: str, result: CaptureResult | None = None) -> None:
-        body = {"delivery": delivery, "result": result.model_dump() if result else None}
-        self._check(await self._http.post(f"/worker/leases/{lease_id}/complete", json=body))
+    async def complete(self, lease_id: str) -> None:
+        """The sealed result is in the vault. Nothing else is ever sent: the server keeps no result."""
+        self._check(await self._http.post(f"/worker/leases/{lease_id}/complete", json={"delivery": "delivered"}))
 
     async def fail(self, lease_id: str, error: str) -> None:
         self._check(await self._http.post(f"/worker/leases/{lease_id}/fail", json={"error": error[:500]}))

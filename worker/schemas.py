@@ -17,7 +17,8 @@ class Job(BaseModel):
     ticket_id: str
     lease_expires_at: float
     audio_content_type: str
-    drop: Drop | None = None
+    # Every job names the vault drop its result goes to: there is nowhere else to send it.
+    drop: Drop
 
 
 class Candidate(BaseModel):
