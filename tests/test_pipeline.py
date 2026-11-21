@@ -69,14 +69,13 @@ def make_steps(transcript="une pomme", fail_at=None) -> Steps:
 
 
 def make_job(inbox: PrivateKey | None = None) -> Job:
-    drop = None
-    if inbox:
-        drop = Drop(
-            url="http://vault.test",
-            token="pnv_drop",
-            record_id="capture-1",
-            inbox_public_key=base64.b64encode(bytes(inbox.public_key)).decode(),
-        )
+    inbox = inbox or PrivateKey.generate()
+    drop = Drop(
+        url="http://vault.test",
+        token="pnv_drop",
+        record_id="capture-1",
+        inbox_public_key=base64.b64encode(bytes(inbox.public_key)).decode(),
+    )
     return Job(lease_id="L1", ticket_id="T1", lease_expires_at=0, audio_content_type="audio/mp4", drop=drop)
 
 
@@ -88,28 +87,20 @@ def open_payload(vault: FakeVault, inbox: PrivateKey) -> dict:
 
 async def run(job, settings, steps, server, vault=None):
     client = ServerClient(settings, transport=httpx.MockTransport(server))
+    vault = vault or FakeVault()
     try:
-        await process(job, client, settings, steps, vault_transport=httpx.MockTransport(vault) if vault else None)
+        await process(job, client, settings, steps, vault_transport=httpx.MockTransport(vault))
     finally:
         await client.aclose()
 
 
-async def test_without_a_vault_the_result_goes_back_to_the_server(settings):
-    server = FakeServer()
-    await run(make_job(), settings, make_steps(), server)
-
-    assert [name for name, _ in server.calls] == ["audio", "progress", "progress", "complete"]
-    assert [b["status"] for b in server.sent("progress")] == ["transcribing", "extracting"]
-    (done,) = server.sent("complete")
-    assert done["delivery"] == "none" and done["result"]["items"][0]["candidates"][0]["ingredient_id"] == "pomme_crue"
-
-
-async def test_with_a_vault_the_result_is_sealed_there_and_never_sent_to_the_server(settings):
+async def test_the_result_is_sealed_into_the_vault_and_never_sent_to_the_server(settings):
     inbox, server, vault = PrivateKey.generate(), FakeServer(), FakeVault()
     await run(make_job(inbox), settings, make_steps(), server, vault)
 
-    (done,) = server.sent("complete")
-    assert done == {"delivery": "delivered", "result": None}
+    assert [name for name, _ in server.calls] == ["audio", "progress", "progress", "complete"]
+    assert [b["status"] for b in server.sent("progress")] == ["transcribing", "extracting"]
+    assert server.sent("complete") == [{"delivery": "delivered"}]
 
     payload = open_payload(vault, inbox)
     assert payload["record_id"] == "capture-1" and payload["ticket_id"] == "T1" and payload["status"] == "done"
@@ -118,12 +109,16 @@ async def test_with_a_vault_the_result_is_sealed_there_and_never_sent_to_the_ser
     assert str(vault.requests[0].url) == "http://vault.test/v1/drop"
 
 
-async def test_a_refused_deposit_falls_back_to_the_ticket(settings):
-    inbox, server, vault = PrivateKey.generate(), FakeServer(), FakeVault(status=401)
-    await run(make_job(inbox), settings, make_steps(), server, vault)
+    assert payload["result"]["items"][0]["candidates"][0]["ingredient_id"] == "pomme_crue"
 
-    (done,) = server.sent("complete")
-    assert done["delivery"] == "failed" and done["result"]["transcript"] == "une pomme"
+
+async def test_a_refused_deposit_fails_the_job_and_the_result_goes_nowhere(settings):
+    server, vault = FakeServer(), FakeVault(status=401)
+    await run(make_job(), settings, make_steps(), server, vault)
+
+    assert server.sent("complete") == []
+    assert server.sent("fail") == [{"error": "vault delivery failed"}]
+    assert "une pomme" not in str(server.calls)
 
 
 async def test_silence_fails_the_job_with_a_readable_reason(settings):
@@ -176,26 +171,25 @@ def make_photo_job(inbox: PrivateKey | None = None) -> Job:
 
 
 async def test_a_photo_skips_transcription_and_reports_only_extracting(settings):
-    server = FakeServer()
-    await run(make_photo_job(), settings, make_photo_steps(), server)
+    inbox, server, vault = PrivateKey.generate(), FakeServer(), FakeVault()
+    await run(make_photo_job(inbox), settings, make_photo_steps(), server, vault)
 
     assert [name for name, _ in server.calls] == ["audio", "progress", "complete"]
     assert [b["status"] for b in server.sent("progress")] == ["extracting"]
-    (done,) = server.sent("complete")
-    assert done["result"]["transcript"] == "Une pomme rouge sur une assiette."
-    assert done["result"]["items"][0]["quantity"] == 150
+    result = open_payload(vault, inbox)["result"]
+    assert result["transcript"] == "Une pomme rouge sur une assiette."
+    assert result["items"][0]["quantity"] == 150
 
 
 async def test_a_photo_result_is_sealed_into_the_vault(settings):
     inbox, server, vault = PrivateKey.generate(), FakeServer(), FakeVault()
     await run(make_photo_job(inbox), settings, make_photo_steps(), server, vault)
 
-    assert server.sent("complete") == [{"delivery": "delivered", "result": None}]
+    assert server.sent("complete") == [{"delivery": "delivered"}]
     assert open_payload(vault, inbox)["result"]["items"][0]["candidates"][0]["ingredient_id"] == "pomme_crue"
 
 
 async def test_a_photo_without_food_completes_with_no_items(settings):
-    server = FakeServer()
-    await run(make_photo_job(), settings, make_photo_steps(items=0), server)
-    (done,) = server.sent("complete")
-    assert done["result"]["items"] == [] and not server.sent("fail")
+    inbox, server, vault = PrivateKey.generate(), FakeServer(), FakeVault()
+    await run(make_photo_job(inbox), settings, make_photo_steps(items=0), server, vault)
+    assert open_payload(vault, inbox)["result"]["items"] == [] and not server.sent("fail")
